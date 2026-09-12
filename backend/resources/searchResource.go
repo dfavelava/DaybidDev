@@ -65,7 +65,7 @@ func NewSearchResource(manager managers.MemoryManager, embedder Embedder, index 
 func InitSearchResource(r *gin.RouterGroup, manager managers.MemoryManager, embedder Embedder, index SearchIndex) {
 	resource := NewSearchResource(manager, embedder, index)
 
-	group := r.Group("/", middleware.AuthMiddleware())
+	group := r.Group("/memory", middleware.AuthMiddleware())
 	group.POST("/search", resource.search)
 }
 

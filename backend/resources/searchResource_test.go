@@ -69,7 +69,7 @@ func newSearchTestServer(t *testing.T, hits []daos.SearchHit, seed map[string]st
 func TestSearchRequiresBearerToken(t *testing.T) {
 	srv, _ := newSearchTestServer(t, nil, nil)
 
-	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/connectome/search", strings.NewReader(`{"query":"tea"}`))
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/connectome/memory/search", strings.NewReader(`{"query":"tea"}`))
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestSearchRequiresBearerToken(t *testing.T) {
 func TestSearchRejectsEmptyQuery(t *testing.T) {
 	srv, _ := newSearchTestServer(t, nil, nil)
 
-	resp, payload := doRequest(t, http.MethodPost, srv.URL+"/api/connectome/search", strings.NewReader(`{"query":"  "}`), map[string]string{"Content-Type": "application/json"})
+	resp, payload := doRequest(t, http.MethodPost, srv.URL+"/api/connectome/memory/search", strings.NewReader(`{"query":"  "}`), map[string]string{"Content-Type": "application/json"})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400 for blank query, got %d (%s)", resp.StatusCode, payload)
 	}
@@ -114,7 +114,7 @@ func TestSearchReturnsRankedSnippets(t *testing.T) {
 		{MemoryKey: key, ChunkIndex: 1, Type: "preference", Distance: 0.2},
 	}, map[string]string{key: content})
 
-	resp, payload := doRequest(t, http.MethodPost, srv.URL+"/api/connectome/search",
+	resp, payload := doRequest(t, http.MethodPost, srv.URL+"/api/connectome/memory/search",
 		strings.NewReader(`{"query":"what does David drink","k":3,"filters":{"type":"preference","entity":"david"}}`),
 		map[string]string{"Content-Type": "application/json"})
 	if resp.StatusCode != http.StatusOK {
@@ -169,7 +169,7 @@ func TestSearchHydrateReturnsFullContent(t *testing.T) {
 		{MemoryKey: key, ChunkIndex: 0, Type: "note", Distance: 0.1},
 	}, map[string]string{key: content})
 
-	resp, payload := doRequest(t, http.MethodPost, srv.URL+"/api/connectome/search",
+	resp, payload := doRequest(t, http.MethodPost, srv.URL+"/api/connectome/memory/search",
 		strings.NewReader(`{"query":"anything","hydrate":true}`),
 		map[string]string{"Content-Type": "application/json"})
 	if resp.StatusCode != http.StatusOK {
@@ -196,7 +196,7 @@ func TestSearchHydrateReturnsFullContent(t *testing.T) {
 func TestSearchDefaultsKAndReturnsEmptyResultsWhenNoHits(t *testing.T) {
 	srv, index := newSearchTestServer(t, nil, nil)
 
-	resp, payload := doRequest(t, http.MethodPost, srv.URL+"/api/connectome/search",
+	resp, payload := doRequest(t, http.MethodPost, srv.URL+"/api/connectome/memory/search",
 		strings.NewReader(`{"query":"nothing indexed yet"}`),
 		map[string]string{"Content-Type": "application/json"})
 	if resp.StatusCode != http.StatusOK {
@@ -220,7 +220,7 @@ func TestSearchDefaultsKAndReturnsEmptyResultsWhenNoHits(t *testing.T) {
 func TestSearchClampsKToMax(t *testing.T) {
 	srv, index := newSearchTestServer(t, nil, nil)
 
-	_, payload := doRequest(t, http.MethodPost, srv.URL+"/api/connectome/search",
+	_, payload := doRequest(t, http.MethodPost, srv.URL+"/api/connectome/memory/search",
 		strings.NewReader(`{"query":"broad query","k":10000}`),
 		map[string]string{"Content-Type": "application/json"})
 	if index.gotK != maxSearchK {
