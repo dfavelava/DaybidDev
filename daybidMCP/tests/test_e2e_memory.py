@@ -244,9 +244,16 @@ async def _recall_roundtrip(backend: Backend) -> None:
     )
     tea_key, ada_key, grace_key = tea["key"], ada_fact["key"], grace_fact["key"]
 
+    # recall is an @mcp.tool()-decorated function: its parameters default to
+    # Field(...) sentinels that only resolve to real values when the MCP
+    # protocol layer binds arguments from JSON. Calling it directly, as this
+    # test does, means every argument must be passed explicitly - an omitted
+    # one stays a raw FieldInfo object and fails to JSON-encode.
     try:
         # --- plain semantic search surfaces the relevant memory first ------
-        results = json.loads(await recall(query="What does David like to drink?", k=5))["results"]
+        results = json.loads(
+            await recall(query="What does David like to drink?", k=5, memory_type=None, entity=None, since=None, until=None, hydrate=False)
+        )["results"]
         keys = [r["key"] for r in results]
         assert keys, "expected at least one recall result"
         assert keys[0] == tea_key, f"expected {tea_key} ranked first, got {keys}"
@@ -254,17 +261,29 @@ async def _recall_roundtrip(backend: Backend) -> None:
         assert "content" not in results[0]
 
         # --- type filter narrows to facts only -----------------------------
-        fact_keys = {r["key"] for r in json.loads(await recall(query="algorithms and debugging", k=5, memory_type="fact"))["results"]}
+        fact_keys = {
+            r["key"]
+            for r in json.loads(
+                await recall(query="algorithms and debugging", k=5, memory_type="fact", entity=None, since=None, until=None, hydrate=False)
+            )["results"]
+        }
         assert tea_key not in fact_keys
         assert ada_key in fact_keys or grace_key in fact_keys
 
         # --- entity filter narrows to memories mentioning that entity ------
-        ada_keys = {r["key"] for r in json.loads(await recall(query="Ada Lovelace", k=5, entity="ada"))["results"]}
+        ada_keys = {
+            r["key"]
+            for r in json.loads(
+                await recall(query="Ada Lovelace", k=5, memory_type=None, entity="ada", since=None, until=None, hydrate=False)
+            )["results"]
+        }
         assert ada_key in ada_keys
         assert grace_key not in ada_keys
 
         # --- hydrate returns the full memory body, not just a snippet ------
-        hydrated = json.loads(await recall(query="What does David like to drink?", k=1, hydrate=True))["results"]
+        hydrated = json.loads(
+            await recall(query="What does David like to drink?", k=1, memory_type=None, entity=None, since=None, until=None, hydrate=True)
+        )["results"]
         assert hydrated
         assert "David prefers tea over coffee in the afternoon." in hydrated[0]["content"]
     finally:
