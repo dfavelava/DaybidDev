@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"daybid-dev-service/daos"
+	"daybid-dev-service/managers"
 )
 
 // fakeSearchIndex stands in for *daos.EmbeddingsDao in tests: it returns
@@ -57,7 +58,7 @@ func newSearchTestServer(t *testing.T, hits []daos.SearchHit, seed map[string]st
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	index := &fakeSearchIndex{hits: hits}
-	InitSearchResource(r.Group("/api/connectome"), fakeEmbedder{}, index)
+	InitSearchResource(r.Group("/api/connectome"), managers.NewMemoryManagerFromEnv(), fakeEmbedder{}, index)
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

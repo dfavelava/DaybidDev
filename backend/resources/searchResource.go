@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -55,35 +54,16 @@ type SearchResult struct {
 	Content string  `json:"content,omitempty"`
 }
 
-// newMemoryManagerFromEnv builds the same MEMORY_MANAGER-selected backend
-// NewMemoryResource does, so search reads memory bodies (for snippets and
-// hydrate) from the same store writes land in.
-func newMemoryManagerFromEnv() managers.MemoryManager {
-	managerType := ManagerType(strings.ToLower(os.Getenv("MEMORY_MANAGER")))
-	if managerType == "" {
-		managerType = ManagerTypeS3
-	}
-
-	switch managerType {
-	case ManagerTypeLocal:
-		return managers.InitLocalFsManager()
-	case ManagerTypeS3:
-		return managers.InitS3Manager()
-	default:
-		panic(fmt.Sprintf("unsupported MEMORY_MANAGER %q", managerType))
-	}
-}
-
-func NewSearchResource(embedder Embedder, index SearchIndex) *SearchResourceImpl {
+func NewSearchResource(manager managers.MemoryManager, embedder Embedder, index SearchIndex) *SearchResourceImpl {
 	return &SearchResourceImpl{
-		manager:  newMemoryManagerFromEnv(),
+		manager:  manager,
 		embedder: embedder,
 		index:    index,
 	}
 }
 
-func InitSearchResource(r *gin.RouterGroup, embedder Embedder, index SearchIndex) {
-	resource := NewSearchResource(embedder, index)
+func InitSearchResource(r *gin.RouterGroup, manager managers.MemoryManager, embedder Embedder, index SearchIndex) {
+	resource := NewSearchResource(manager, embedder, index)
 
 	group := r.Group("/", middleware.AuthMiddleware())
 	group.POST("/search", resource.search)
