@@ -34,6 +34,7 @@ func main() {
 	llmGroup := baseGroup.Group("/llm")
 
 	resources.InitMemoryResource(connectomeGroup, ollamaManager, embeddingsDao)
+	resources.InitSearchResource(connectomeGroup, ollamaManager, embeddingsDao)
 	resources.InitLLMResource(llmGroup)
 
 	r.Run()
