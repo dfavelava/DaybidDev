@@ -155,6 +155,7 @@ async def _roundtrip(backend: Backend) -> None:
             entities=[ada],
             relationships=[],
             memory_type="fact",
+            acl=None,
         )
     )
     memory_key = first["key"]
@@ -188,6 +189,7 @@ async def _roundtrip(backend: Backend) -> None:
             entities=[ada],
             relationships=[],
             memory_type="fact",
+            acl=None,
         )
     )
     second_key = second["key"]
@@ -228,6 +230,7 @@ async def _recall_roundtrip(backend: Backend) -> None:
             entities=[],
             relationships=[],
             memory_type="preference",
+            acl=None,
         )
     )
     ada_fact = json.loads(
@@ -236,6 +239,7 @@ async def _recall_roundtrip(backend: Backend) -> None:
             entities=[ada],
             relationships=[],
             memory_type="fact",
+            acl=None,
         )
     )
     grace_fact = json.loads(
@@ -244,15 +248,17 @@ async def _recall_roundtrip(backend: Backend) -> None:
             entities=[grace],
             relationships=[],
             memory_type="fact",
+            acl=None,
         )
     )
     tea_key, ada_key, grace_key = tea["key"], ada_fact["key"], grace_fact["key"]
 
-    # recall is an @mcp.tool()-decorated function: its parameters default to
-    # Field(...) sentinels that only resolve to real values when the MCP
-    # protocol layer binds arguments from JSON. Calling it directly, as this
-    # test does, means every argument must be passed explicitly - an omitted
-    # one stays a raw FieldInfo object and fails to JSON-encode.
+    # recall (like remember, above) is an @mcp.tool()-decorated function: its
+    # parameters default to Field(...) sentinels that only resolve to real
+    # values when the MCP protocol layer binds arguments from JSON. Calling
+    # it directly, as this test does, means every argument must be passed
+    # explicitly - an omitted one stays a raw FieldInfo object and fails to
+    # JSON-encode (or, for remember's acl, fails MemoryMetadata validation).
     try:
         # --- plain semantic search surfaces the relevant memory first ------
         results = json.loads(
