@@ -151,6 +151,10 @@ def test_recall_as_scopes_results_by_acl_and_member_of(backend: Backend) -> None
     asyncio.run(_recall_as_acl_scope(backend))
 
 
+def test_facet_recalls_correctly_for_its_own_audience_alongside_root(backend: Backend) -> None:
+    asyncio.run(_facet_recall(backend))
+
+
 async def _roundtrip(backend: Backend) -> None:
     from daybidmcp.server import Entity, browse_all, forget, get_memory, remember
 
@@ -164,6 +168,7 @@ async def _roundtrip(backend: Backend) -> None:
             relationships=[],
             memory_type="fact",
             acl=None,
+            derived_from=None,
         )
     )
     memory_key = first["key"]
@@ -198,6 +203,7 @@ async def _roundtrip(backend: Backend) -> None:
             relationships=[],
             memory_type="fact",
             acl=None,
+            derived_from=None,
         )
     )
     second_key = second["key"]
@@ -239,6 +245,7 @@ async def _recall_roundtrip(backend: Backend) -> None:
             relationships=[],
             memory_type="preference",
             acl=None,
+            derived_from=None,
         )
     )
     ada_fact = json.loads(
@@ -248,6 +255,7 @@ async def _recall_roundtrip(backend: Backend) -> None:
             relationships=[],
             memory_type="fact",
             acl=None,
+            derived_from=None,
         )
     )
     grace_fact = json.loads(
@@ -257,6 +265,7 @@ async def _recall_roundtrip(backend: Backend) -> None:
             relationships=[],
             memory_type="fact",
             acl=None,
+            derived_from=None,
         )
     )
     tea_key, ada_key, grace_key = tea["key"], ada_fact["key"], grace_fact["key"]
@@ -324,6 +333,7 @@ async def _stub_entities_and_acl(backend: Backend) -> None:
             ],
             memory_type="fact",
             acl=["GM"],
+            derived_from=None,
         )
     )
     memory_key = result["key"]
@@ -376,6 +386,7 @@ async def _supersede_relationship(backend: Backend) -> None:
             ],
             memory_type="fact",
             acl=None,
+            derived_from=None,
         )
     )
     memory_key = result["key"]
@@ -461,6 +472,7 @@ async def _recall_as_acl_scope(backend: Backend) -> None:
             relationships=[Relationship(subjectEntityId="alice", predicate="member_of", objectEntityId="Party A")],
             memory_type="fact",
             acl=None,
+            derived_from=None,
         )
     )
     membership_key = membership["key"]
@@ -472,6 +484,7 @@ async def _recall_as_acl_scope(backend: Backend) -> None:
             relationships=[],
             memory_type="note",
             acl=None,
+            derived_from=None,
         )
     )
     party_memory = json.loads(
@@ -481,6 +494,7 @@ async def _recall_as_acl_scope(backend: Backend) -> None:
             relationships=[],
             memory_type="note",
             acl=["Party A"],
+            derived_from=None,
         )
     )
     gm_memory = json.loads(
@@ -490,6 +504,7 @@ async def _recall_as_acl_scope(backend: Backend) -> None:
             relationships=[],
             memory_type="note",
             acl=["GM"],
+            derived_from=None,
         )
     )
     open_key, party_key, gm_key = open_memory["key"], party_memory["key"], gm_memory["key"]
@@ -542,3 +557,84 @@ async def _recall_as_acl_scope(backend: Backend) -> None:
         for key in (membership_key, open_key, party_key, gm_key):
             await forget(key)
         await forget("ent_alice.json")
+
+
+async def _facet_recall(backend: Backend) -> None:
+    from daybidmcp.server import forget, get_memory, recall, remember
+
+    root = json.loads(
+        await remember(
+            content="The party found a strange amulet in the ruins north of Ashvale.",
+            entities=[],
+            relationships=[],
+            memory_type="event",
+            acl=None,
+            derived_from=None,
+        )
+    )
+    root_key = root["key"]
+
+    facet = json.loads(
+        await remember(
+            content="Grace secretly suspects the amulet is cursed and means to hide it from the rest of the party.",
+            entities=[],
+            relationships=[],
+            memory_type="event",
+            acl=["GM"],
+            derived_from=root_key,
+        )
+    )
+    facet_key = facet["key"]
+
+    try:
+        # --- derived_from round-trips through the stored frontmatter -----------
+        fetched_facet = json.loads(await get_memory(facet_key))
+        facet_metadata, _ = _parse_frontmatter(fetched_facet["content"])
+        assert facet_metadata["derived_from"] == root_key
+
+        fetched_root = json.loads(await get_memory(root_key))
+        root_metadata, _ = _parse_frontmatter(fetched_root["content"])
+        assert root_metadata["derived_from"] is None
+
+        # --- a facet is chunked, embedded, and ACL-filtered like any other ------
+        # --- memory: the GM audience recalls both the root and its facet -------
+        gm_keys = {
+            r["key"]
+            for r in json.loads(
+                await recall(
+                    query="what happened with the amulet in the ruins",
+                    k=10,
+                    memory_type=None,
+                    entity=None,
+                    since=None,
+                    until=None,
+                    hydrate=False,
+                    as_="GM",
+                )
+            )["results"]
+        }
+        assert root_key in gm_keys
+        assert facet_key in gm_keys
+
+        # --- an audience outside the facet's acl sees the root but not the -----
+        # --- facet, which is narrower ---------------------------------------
+        party_keys = {
+            r["key"]
+            for r in json.loads(
+                await recall(
+                    query="what happened with the amulet in the ruins",
+                    k=10,
+                    memory_type=None,
+                    entity=None,
+                    since=None,
+                    until=None,
+                    hydrate=False,
+                    as_="alice",
+                )
+            )["results"]
+        }
+        assert root_key in party_keys
+        assert facet_key not in party_keys
+    finally:
+        await forget(root_key)
+        await forget(facet_key)
