@@ -172,64 +172,74 @@ async def _roundtrip(backend: Backend) -> None:
         )
     )
     memory_key = first["key"]
-    assert memory_key.startswith("mem_") and memory_key.endswith(".md")
-    assert first["entity_keys"] == ["ent_ada.json"]
+    second_key: str | None = None
+    try:
+        assert memory_key.startswith("mem_") and memory_key.endswith(".md")
+        assert first["entity_keys"] == ["ent_ada.json"]
 
-    memory_path = backend.connectome_dir / memory_key
-    assert memory_path.is_file(), "memory file was not written to the local FS"
+        memory_path = backend.connectome_dir / memory_key
+        assert memory_path.is_file(), "memory file was not written to the local FS"
 
-    metadata, body = _parse_frontmatter(memory_path.read_text())
-    assert metadata["version"] == "connectome/memory/0.1"
-    assert metadata["id"] == memory_key
-    assert metadata["type"] == "fact"
-    assert metadata["entities"] == ["ada"]
-    assert metadata["relationships"] == []
-    assert metadata["created_at"]
-    assert "source" in metadata
-    assert body == "Ada enjoys analytical engines."
+        metadata, body = _parse_frontmatter(memory_path.read_text())
+        assert metadata["version"] == "connectome/memory/0.1"
+        assert metadata["id"] == memory_key
+        assert metadata["type"] == "fact"
+        assert metadata["entities"] == ["ada"]
+        assert metadata["relationships"] == []
+        assert metadata["created_at"]
+        assert "source" in metadata
+        assert body == "Ada enjoys analytical engines."
 
-    entity_path = backend.connectome_dir / "ent_ada.json"
-    assert entity_path.is_file(), "entity record was not created"
-    entity_record = json.loads(entity_path.read_text())
-    assert entity_record["id"] == "ada"
-    assert entity_record["name"] == "Ada Lovelace"
-    assert entity_record["memory_ids"] == [memory_key]
+        entity_path = backend.connectome_dir / "ent_ada.json"
+        assert entity_path.is_file(), "entity record was not created"
+        entity_record = json.loads(entity_path.read_text())
+        assert entity_record["id"] == "ada"
+        assert entity_record["name"] == "Ada Lovelace"
+        assert entity_record["memory_ids"] == [memory_key]
 
-    # --- remember again: memory_ids merge on the shared entity -------------
-    second = json.loads(
-        await remember(
-            content="Ada wrote the first algorithm.",
-            entities=[ada],
-            relationships=[],
-            memory_type="fact",
-            acl=None,
-            derived_from=None,
+        # --- remember again: memory_ids merge on the shared entity ---------
+        second = json.loads(
+            await remember(
+                content="Ada wrote the first algorithm.",
+                entities=[ada],
+                relationships=[],
+                memory_type="fact",
+                acl=None,
+                derived_from=None,
+            )
         )
-    )
-    second_key = second["key"]
-    assert second_key != memory_key
+        second_key = second["key"]
+        assert second_key != memory_key
 
-    entity_record = json.loads(entity_path.read_text())
-    assert entity_record["memory_ids"] == [memory_key, second_key]
+        entity_record = json.loads(entity_path.read_text())
+        assert entity_record["memory_ids"] == [memory_key, second_key]
 
-    # --- browse_all -------------------------------------------------------
-    listed = json.loads(await browse_all())
-    listed_keys = {item["key"] for item in listed["keys"]}
-    assert {memory_key, second_key, "ent_ada.json"} <= listed_keys
+        # --- browse_all -----------------------------------------------------
+        listed = json.loads(await browse_all())
+        listed_keys = {item["key"] for item in listed["keys"]}
+        assert {memory_key, second_key, "ent_ada.json"} <= listed_keys
 
-    # --- get_memory ------------------------------------------------------
-    fetched = json.loads(await get_memory(memory_key))
-    assert "Ada enjoys analytical engines." in fetched["content"]
+        # --- get_memory ------------------------------------------------------
+        fetched = json.loads(await get_memory(memory_key))
+        assert "Ada enjoys analytical engines." in fetched["content"]
 
-    # --- forget --------------------------------------------------------
-    deleted = json.loads(await forget(memory_key))
-    assert deleted == {"message": "deleted", "key": memory_key}
-    assert not memory_path.exists(), "memory file still present after forget"
+        # --- forget -----------------------------------------------------------
+        deleted = json.loads(await forget(memory_key))
+        assert deleted == {"message": "deleted", "key": memory_key}
+        assert not memory_path.exists(), "memory file still present after forget"
 
-    remaining = {item["key"] for item in json.loads(await browse_all())["keys"]}
-    assert memory_key not in remaining
-    assert second_key in remaining
-    assert "ent_ada.json" in remaining
+        remaining = {item["key"] for item in json.loads(await browse_all())["keys"]}
+        assert memory_key not in remaining
+        assert second_key in remaining
+        assert "ent_ada.json" in remaining
+    finally:
+        # memory_key is already forgotten above; second_key and the entity
+        # record are only forgotten here so a real (non-ephemeral) Postgres
+        # instance backing the embeddings table isn't left with an orphaned
+        # row when this test runs against it.
+        if second_key is not None:
+            await forget(second_key)
+        await forget("ent_ada.json")
 
 
 async def _recall_roundtrip(backend: Backend) -> None:
