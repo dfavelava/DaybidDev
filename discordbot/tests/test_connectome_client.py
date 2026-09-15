@@ -145,6 +145,116 @@ async def test_get_memory_sends_key_as_query_param(patch_async_client):
     assert request.url.params["key"] == "mem_abc.md"
 
 
+async def test_remember_includes_relationships_when_given(patch_async_client):
+    from discordbot.connectome_client import format_relationship
+
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["request"] = request
+        return httpx.Response(200, json={"message": "success"})
+
+    set_handler(patch_async_client, handler)
+
+    client = make_client()
+    relationship = format_relationship("player-1", "plays", "thorin")
+    _ = await client.remember("player-1 plays thorin.", relationships=[relationship])
+
+    body = captured["request"].content.decode("utf-8")
+    document = body.split("\r\n\r\n", 1)[1].rsplit("\r\n--", 1)[0]
+    frontmatter_yaml = document.split("---\n", 2)[1]
+    metadata = yaml.safe_load(frontmatter_yaml)
+
+    assert metadata["relationships"] == [
+        {
+            "subjectEntityId": "player-1",
+            "predicate": "plays",
+            "objectEntityId": "thorin",
+            "kind": "fact",
+            "superseded_by": None,
+        }
+    ]
+
+
+async def test_get_entity_returns_parsed_json(patch_async_client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"content": json.dumps({"id": "thorin", "kind": "character"})})
+
+    set_handler(patch_async_client, handler)
+
+    client = make_client()
+    entity = await client.get_entity("thorin")
+
+    request = last_request(patch_async_client)
+    assert request.url.params["key"] == "ent_thorin.json"
+    assert entity == {"id": "thorin", "kind": "character"}
+
+
+async def test_get_entity_returns_none_on_404(patch_async_client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "not found"})
+
+    set_handler(patch_async_client, handler)
+
+    client = make_client()
+    entity = await client.get_entity("missing")
+
+    assert entity is None
+
+
+async def test_create_entity_posts_entity_json(patch_async_client):
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["request"] = request
+        return httpx.Response(200, json={"message": "success"})
+
+    set_handler(patch_async_client, handler)
+
+    client = make_client()
+    await client.create_entity("thorin", kind="character", meta={"owner": "discord-1"})
+
+    request = captured["request"]
+    assert request.method == "POST"
+    assert str(request.url) == "http://example.test/api/connectome/memory/"
+    body = request.content.decode("utf-8")
+    assert 'filename="ent_thorin.json"' in body
+
+    document = body.split("\r\n\r\n", 1)[1].rsplit("\r\n--", 1)[0]
+    entity = json.loads(document)
+    assert entity["id"] == "thorin"
+    assert entity["kind"] == "character"
+    assert entity["meta"] == {"owner": "discord-1"}
+
+
+async def test_supersede_relationship_sends_patch(patch_async_client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": "success"})
+
+    set_handler(patch_async_client, handler)
+
+    client = make_client()
+    result = await client.supersede_relationship(
+        memory_id="mem_old.md",
+        subject_entity_id="discord-1",
+        predicate="plays",
+        object_entity_id="thorin",
+        superseded_by="mem_new.md",
+    )
+
+    request = last_request(patch_async_client)
+    assert request.method == "PATCH"
+    assert str(request.url) == "http://example.test/api/connectome/memory/relationship"
+    assert json.loads(request.content) == {
+        "key": "mem_old.md",
+        "subjectEntityId": "discord-1",
+        "predicate": "plays",
+        "objectEntityId": "thorin",
+        "superseded_by": "mem_new.md",
+    }
+    assert result == {"message": "success"}
+
+
 async def test_forget_sends_delete_with_key_body(patch_async_client):
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={})

@@ -17,6 +17,23 @@ yet (Phase 2), so a deterministic id needs no separate lookup step.
 
 - `/remember <content>` - stores `content` as a memory attributed to the
   calling user's entity id.
+- `/play-character <name>` - resolve-or-create a PC entity
+  (`ent_<slugified name>.json`, `kind: "character"`) and record that the
+  calling player plays it (see [`characters.py`](src/discordbot/characters.py)
+  for `handle_play_character`). Refuses if another player already owns a PC
+  with that name; re-running it for a PC the caller already plays is a
+  no-op. If the caller already plays a *different* PC, that PC's `plays`
+  relationship is superseded by the new one (retirement) via the
+  already-shipped `supersede_relationship` backend endpoint - no new backend
+  capability needed. Party `member_of` does **not** carry over to the new PC
+  on retirement (a design decision, not an oversight - see the module
+  docstring): run `/join-party` again for the new PC if it needs one.
+
+  There's no entity-lookup tool yet (Phase 2), so the bot can't ask the
+  backend "which memory currently asserts this player's `plays`
+  relationship?" when it's time to retire a PC. Instead it caches the
+  current PC id and that memory's key itself, in-process
+  (`PlayerState`) - this state does not survive a bot restart.
 
 ### Run the bot
 
@@ -82,13 +99,17 @@ await client.recall("what does david drink")
 
 Covers the routes needed to write and search memory:
 
-- `POST /api/connectome/memory/` (`remember`)
+- `POST /api/connectome/memory/` (`remember`, `create_entity`)
 - `POST /api/connectome/memory/search` (`recall`)
-- `GET /api/connectome/memory/?key=...` (`get_memory`)
+- `GET /api/connectome/memory/?key=...` (`get_memory`, `get_entity`)
 - `GET /api/connectome/memory/list` (`browse_all`)
 - `DELETE /api/connectome/memory/` (`forget`)
+- `PATCH /api/connectome/memory/relationship` (`supersede_relationship`)
 
-`remember` writes a plain memory document (content + entity ids); it does not
-replicate `daybidmcp.server`'s entity-record merge logic (`ent_*.json`
-records, `member_of`, relationships). That can be added if/when the bot
-needs it.
+`remember` writes a plain memory document (content + entity ids +
+relationships, via `format_relationship`); unlike `daybidmcp.server`'s
+`remember`, it does not merge onto existing entity records or maintain
+`member_of` - `create_entity` writes a bare entity record outright, with no
+read-modify-write merge of its own. Callers that need read-modify-write
+semantics should `get_entity` first, as `handle_play_character` does to
+check PC ownership before deciding whether to create or reuse one.

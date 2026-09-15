@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 from datetime import UTC, datetime
@@ -18,11 +19,32 @@ MemoryType = Literal["note", "fact", "preference", "event"]
 MEMORY_TYPES: tuple[str, ...] = get_args(MemoryType)
 DEFAULT_MEMORY_TYPE: MemoryType = "note"
 
+# Mirrors RelationshipKind/DEFAULT_RELATIONSHIP_KIND in daybidmcp.server.
+RelationshipKind = Literal["fact", "hypothesis", "rumor"]
+DEFAULT_RELATIONSHIP_KIND: RelationshipKind = "fact"
+
 # Identifies where a memory came from, mirroring daybidmcp.server's
 # MEMORY_SOURCE_TYPE convention for its own client identity.
 MEMORY_SOURCE_TYPE = "discord"
 
 _ = load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
+
+def format_relationship(
+    subject_entity_id: str,
+    predicate: str,
+    object_entity_id: str | None = None,
+    kind: RelationshipKind = DEFAULT_RELATIONSHIP_KIND,
+    superseded_by: str | None = None,
+) -> dict[str, object]:
+    """Build a relationship entry matching daybidmcp.server's Relationship shape."""
+    return {
+        "subjectEntityId": subject_entity_id,
+        "predicate": predicate,
+        "objectEntityId": object_entity_id,
+        "kind": kind,
+        "superseded_by": superseded_by,
+    }
 
 
 class ConnectomeClient:
@@ -80,6 +102,7 @@ class ConnectomeClient:
         content: str,
         memory_type: MemoryType = DEFAULT_MEMORY_TYPE,
         entities: list[str] | None = None,
+        relationships: list[dict[str, object]] | None = None,
         acl: list[str] | None = None,
     ) -> dict[str, str]:
         """Write a memory document and return its key."""
@@ -92,7 +115,7 @@ class ConnectomeClient:
             "created_at": now,
             "source": {"type": MEMORY_SOURCE_TYPE, "created_at": now},
             "entities": list(entities or []),
-            "relationships": [],
+            "relationships": list(relationships or []),
         }
         if acl is not None:
             metadata["acl"] = acl
@@ -140,6 +163,68 @@ class ConnectomeClient:
     async def get_memory(self, key: str) -> dict[str, object]:
         """Fetch a stored memory document or entity record by key."""
         response = await self._request("GET", "/memory/", params={"key": key})
+        return response.json()
+
+    async def get_entity(self, entity_id: str) -> dict[str, object] | None:
+        """Fetch an entity record (ent_<id>.json), or None if it has never been written."""
+        try:
+            response = await self.get_memory(f"ent_{entity_id}.json")
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return None
+            raise
+        content = response.get("content")
+        if not isinstance(content, str):
+            return None
+        return json.loads(content)
+
+    async def create_entity(
+        self,
+        entity_id: str,
+        kind: str | None = None,
+        meta: dict[str, object] | None = None,
+        name: str | None = None,
+    ) -> None:
+        """Write a bare entity record (ent_<id>.json), matching daybidmcp.server's EntityWithMemories shape.
+
+        Unlike daybidmcp.server's `remember`, this does not merge onto an existing record - callers
+        that need read-modify-write semantics should `get_entity` first and decide how to merge.
+        """
+        entity = {
+            "id": entity_id,
+            "name": name,
+            "kind": kind,
+            "meta": meta,
+            "memory_ids": None,
+            "member_of": None,
+        }
+        payload = json.dumps(entity).encode("utf-8")
+        _ = await self._request(
+            "POST",
+            "/memory/",
+            files={"file": (f"ent_{entity_id}.json", BytesIO(payload), "application/json")},
+        )
+
+    async def supersede_relationship(
+        self,
+        memory_id: str,
+        subject_entity_id: str,
+        predicate: str,
+        object_entity_id: str | None = None,
+        superseded_by: str | None = None,
+    ) -> dict[str, object]:
+        """Set (or clear) superseded_by on one relationship entry of an existing memory."""
+        response = await self._request(
+            "PATCH",
+            "/memory/relationship",
+            json_body={
+                "key": memory_id,
+                "subjectEntityId": subject_entity_id,
+                "predicate": predicate,
+                "objectEntityId": object_entity_id,
+                "superseded_by": superseded_by,
+            },
+        )
         return response.json()
 
     async def browse_all(self) -> dict[str, object]:
