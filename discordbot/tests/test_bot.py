@@ -6,7 +6,9 @@ class FakeConnectomeClient:
     def __init__(self) -> None:
         self.remember_calls: list[dict[str, object]] = []
 
-    async def remember(self, content: str, entities: list[str] | None = None) -> dict[str, str]:
+    async def remember(
+        self, content: str, entities: list[str] | None = None, relationships: list[dict[str, object]] | None = None
+    ) -> dict[str, str]:
         self.remember_calls.append({"content": content, "entities": entities})
         return {"key": "mem_test.md"}
 
@@ -34,3 +36,12 @@ def test_create_bot_registers_remember_command():
 
     assert command is not None
     assert command.name == "remember"
+
+
+def test_create_bot_registers_play_character_command():
+    bot = create_bot()
+
+    command = bot.tree.get_command("play-character")
+
+    assert command is not None
+    assert command.name == "play-character"

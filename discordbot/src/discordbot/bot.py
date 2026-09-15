@@ -5,6 +5,7 @@ import discord
 from discord import app_commands
 from dotenv import load_dotenv
 
+from .characters import PlayerState, handle_play_character
 from .connectome_client import ConnectomeClient
 from .identity import discord_entity_id
 
@@ -34,6 +35,7 @@ class DaybidDiscordBot(discord.Client):
     def __init__(self, connectome: ConnectomeClient | None = None) -> None:
         super().__init__(intents=discord.Intents.default())
         self.connectome = connectome or ConnectomeClient()
+        self.player_state = PlayerState()
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self) -> None:
@@ -54,6 +56,12 @@ def create_bot() -> DaybidDiscordBot:
     async def remember(interaction: discord.Interaction, content: str) -> None:
         message = await handle_remember(bot.connectome, interaction.user.id, content)
         await interaction.response.send_message(message, ephemeral=True)
+
+    @bot.tree.command(name="play-character", description="Play a player character.")
+    @app_commands.describe(name="The PC's name")
+    async def play_character(interaction: discord.Interaction, name: str) -> None:
+        message = await handle_play_character(bot.connectome, bot.player_state, interaction.user.id, name)
+        await interaction.response.send_message(message)
 
     return bot
 
